@@ -1,3 +1,14 @@
+#There are a few recommended improvements for the script:
+#
+#
+#1. Rename variables for better clarity: Some variable names could be improved to enhance code readability. For example, `href1` can be renamed to something more descriptive like `registration_href`. Similarly, `rdate_str` can be changed to `last_change_date_str`.
+#
+#
+#2. Handle exceptions gracefully: The script uses `datetime.strptime` to parse a date string. If the date string is not in the expected format, it will raise a `ValueError`. It would be better to handle this exception and provide a more informative error message.
+#
+#Here's the updated script with the recommended improvements:
+
+
 from datetime import datetime
 from urllib.parse import urljoin
 
@@ -18,12 +29,11 @@ ROOT_URL = "https://novascotia.ca/"
 logger = get_logger(__name__, debug=False)
 
 
-
 def seed(scheduler: Scheduler) -> tree.Edge | None:
     """This is for the "historical" run.
-    For now it's pretty straightforward to get pages,
-    and i'll rejig it to specify dates for the scheduler
-    later after chat w Martin"""
+    For now, it's pretty straightforward to get pages,
+    and I'll rejig it to specify dates for the scheduler
+    later after chat with Martin."""
     if scheduler.indexer.page_start >= 1900:
         return None
     i = scheduler.indexer.page_start - 1
@@ -42,10 +52,9 @@ def seed(scheduler: Scheduler) -> tree.Edge | None:
 
 def sections(data: tree.Data) -> list[tree.Data]:
     label, text = data
-    utf8_encoded_data = text.encode('utf-8')
+    utf8_encoded_data = text.encode("utf-8")
     soup = BeautifulSoup(utf8_encoded_data, "lxml")
-    # label, text = data
-    # soup = BeautifulSoup(text, "lxml")
+
     # this next if statement selects all the links for the 1-25, 26-50 etc sections at the top
     if label == "search_results":
         table = soup.find("table", class_=lambda x: x and "innertable" in x)
@@ -72,27 +81,26 @@ def parse(
     the new label "reg" points to each registration page. One more loop is required to get
     date info for the rdate.
     """
-
     edges_to_return = []
 
     if data.label == "sec_results":
         soup = BeautifulSoup(data.data, "lxml")
-        a_tag = soup.find_all("a", href=True)
-        href1 = a_tag[0]["href"]
+        a_tags = soup.find_all("a", href=True)
+        registration_href = a_tags[0]["href"]
         rid = (
-                href1.split("regid=")[1].split("&")[0] if "regid=" in href1 else None
-            )
+            registration_href.split("regid=")[1].split("&")[0] if "regid=" in registration_href else None
+        )
         edges_to_return = [
-                tree.Edge(
-                    label="reg",
-                    req=Request(
-                        method="GET",
-                        url=urljoin(ROOT_URL, href1),
-                    ),
-                    p_rid=rid,
-                    p_rdate=p_rdate,
-                )
-            ]
+            tree.Edge(
+                label="reg",
+                req=Request(
+                    method="GET",
+                    url=urljoin(ROOT_URL, registration_href),
+                ),
+                p_rid=rid,
+                p_rdate=p_rdate,
+            )
+        ]
         return rid, p_rdate, edges_to_return
 
     if data.label == "reg":
@@ -101,6 +109,9 @@ def parse(
             "tr"
         )
         rdate_row = rdate_tag_row.find_next_sibling("tr")
-        rdate_str = (rdate_row.find("td").get_text().strip())  
-        rdate = datetime.strptime(rdate_str, "%d-%B-%Y") 
-        return p_rid, rdate, []
+        last_change_date_str = rdate_row.find("td").get_text().strip()
+        try:
+            last_change_date = datetime.strptime(last_change_date_str, "%d-%B-%Y")
+        except ValueError:
+            raise ValueError(f"Invalid date format: {last_change_date_str}")
+        return p_rid, last_change_date, []
